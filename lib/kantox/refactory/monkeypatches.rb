@@ -1,4 +1,6 @@
+require 'active_record'
 require 'active_support/inflector'
+require 'active_support/core_ext/module/delegation'
 
 module Kantox
   module Refactory

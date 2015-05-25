@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
-require "bundler/setup"
-require "kantox/refactory"
+require 'bundler/setup'
+require 'kantox/refactory'
 
 # You can add fixtures and/or initialization code here to make experimenting
 # with your gem easier. You can also use a different console, if you like.
@@ -9,4 +9,10 @@ require "kantox/refactory"
 # require "pry"
 # Pry.start
 
-Kantox::Refactory::Model::Telescope.new BidSide
+require File.expand_path('config/environment',  Dir.pwd)
+
+bidside = Kantox::Refactory::Model::Telescope.new(BidSide)
+
+
+1.upto(10) { |i| bidside.to_graph true, i }
+1.upto(10) { |i| bidside.to_graph false, i }
