@@ -41,15 +41,13 @@ module Kantox
         #     string fields that might be grouped, data interpreted as series, keys and the rest.
         # @return [Hash] { date: [..], group: [..], series: [..], keys: [..], garbage: [..] }
         def columns eager_group = true
-          @columns = sort_columns(@model.columns) unless @columns
-          group_columns! if eager_group
+          (@columns ||= sort_columns(@model.columns)).tap { |_| group_columns! if eager_group }
         end
 
         # @return [String]
         def crawl
           @children ||= reflections([:has_one, :belongs_to]).inject({}) do |memo, (name, r)|
-            memo[name] = { reflection: r, pince_nez: PinceNez.new(r) }
-            memo
+            memo.tap { |m| m[name] = { reflection: r, pince_nez: PinceNez.new(r) } }
           end
         end
 
@@ -59,7 +57,7 @@ module Kantox
 
         def inspect
           # "#<#{self.class}:#{'0x%016x' % (self.__id__ << 1)} #{exposed_inspect}>"
-          "#<★PinceNez #{@model.name}>"
+          "#<★PinceNez #{@model.name} labels=#{columns(false)[:labels].map(&:name)}>"
         end
 
       protected
@@ -87,10 +85,11 @@ module Kantox
         end
 
         def sort_columns columns
-          columns.inject({ date: [], group: {}, series: [], keys: [], garbage: [], grouped: false }) do |memo, column|
+          columns.inject({ date: [], group: {}, series: [], keys: [], labels: [], garbage: [], grouped: false }) do |memo, column|
             case column.type
               when :datetime then memo[:date]
               when :integer  then memo[column.name == 'id' || column.name[-3..-1] == '_id' ? :keys : :series]
+              when :string   then memo[column.name =~ /(?<=[^a-z]|\A)name(?=[^a-z]|\z)/ ? :labels : :garbage]
               else                memo[:garbage]
             end << column
             memo
@@ -103,7 +102,7 @@ module Kantox
           fail 'Lame programmer error' unless @columns.is_a? Hash
           unless @columns[:grouped]
             total = @model.count
-            %i(keys garbage).each do |k|
+            %i(keys labels garbage).each do |k|
               @columns[:group][k] = @columns[k].select do |col|
                                       @model.group(col.name.to_sym).count.count * 100 / GROUP_FACTOR < total
                                     end
