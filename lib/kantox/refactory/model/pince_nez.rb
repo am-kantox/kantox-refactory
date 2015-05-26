@@ -4,7 +4,7 @@ module Kantox
   module Refactory
     module Model
       class PinceNez
-        attr_reader :model
+        attr_reader :model, :children
 
         # Defines unique records percent to decide whether grouping might be interesting on that column
         # @default 10 whether total amount of records divided by unique records number is less or equal to ten,
@@ -45,9 +45,10 @@ module Kantox
         end
 
         # @return [String]
-        def crawl
+        def crawl count_through = true
           @children ||= reflections([:has_one, :belongs_to]).inject({}) do |memo, (name, r)|
-            memo.tap { |m| m[name] = { reflection: r, pince_nez: PinceNez.new(r) } }
+            !count_through && r.is_a?(::ActiveRecord::Reflection::ThroughReflection) ?
+              memo : memo.tap { |m| m[name] = { reflection: r, pince_nez: PinceNez.new(r) } }
           end
         end
 

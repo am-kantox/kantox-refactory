@@ -1,4 +1,5 @@
 require 'graphviz'
+require 'bloomit'
 
 module Kantox
   module Refactory
@@ -8,21 +9,35 @@ module Kantox
 
         attr_reader :tree, :yielded
         # @param [String|Symbol|::ActiveRecord::Reflection] model
-        def initialize model
+        def initialize model, levels = 20, count_through = true
           @model = model
-          @max_levels = 20
+          @count_through = count_through
+          @levels = levels
           @yielded = [PinceNez.new(model)]
-          (@tree = {})[@yielded.first] = crawl_level @yielded.first
+          (@tree = {})[@yielded.first] = crawl_level @yielded.first, @levels
         end
 
-        def to_graph reuse_nodes = true, levels = -1, filename = nil
+        def to_graph reuse_nodes = true, filename = nil
           g = GraphViz.new(:G, :type => :digraph)
-          @max_levels = levels if levels > 0
           @tree.each do |_, v|
             root = g.add_nodes v[:model].name, { shape: :box, style: :filled, color: yield_color(v[:model].name) }
-            level_to_graph g, root, v[:children], { v[:model].name => root }, [], levels, reuse_nodes
+            level_to_graph g, root, v[:children], { v[:model].name => root }, [], @levels, reuse_nodes
           end
-          g.output(png: filename || "doc/#{@tree.keys.map(&:name).join('+')}_#{reuse_nodes ? 'uniq' : 'all'}_#{levels > 0 ? levels : 'all'}.png")
+          puts "Will write doc/#{@tree.keys.map(&:name).join('+')}_#{@count_through ? 'thru' : 'direct'}_#{reuse_nodes ? 'uniq' : 'all'}_#{@levels}.png"
+          g.output(png: filename || "doc/#{@tree.keys.map(&:name).join('+')}_#{@count_through ? 'thru' : 'direct'}_#{reuse_nodes ? 'uniq' : 'all'}_#{@levels}.png")
+        end
+
+        def to_plant_uml filename = nil
+          plantuml = "@startuml\n" # scale 8000 width\n"
+          @tree.each do |_, v|
+            plantuml << level_to_plant_uml(v)
+          end
+          plantuml << "\n@enduml"
+
+          filename ||= "doc/#{@tree.keys.map(&:name).join('+')}.plantuml"
+          File.open(filename, 'w') do |f|
+            f.puts plantuml
+          end
         end
 
       private
@@ -33,17 +48,17 @@ module Kantox
                       end
         end
 
-        def crawl_level model
+        def crawl_level model, levels
             {
               model: model,
-              children: model.crawl.map do |name, r|
+              children: levels <= 0 ? {} : model.crawl(@count_through).map do |name, r|
                           ar = r[:reflection].model_class
                           [
                               name,
-                              @yielded.include?(ar) ? { model: r[:pince_nez], children: {} } :
+                              @yielded.include?(ar) ? { model: r[:pince_nez], type: r[:reflection].macro, children: {} } :
                                   begin
                                     @yielded << ar
-                                    crawl_level(r[:pince_nez])
+                                    crawl_level r[:pince_nez], levels - 1
                                   end
                           ]
                         end.to_h
@@ -52,14 +67,15 @@ module Kantox
 
         def yield_color model_name
           @colors ||= {}
-          @colors[model_name] ||= COLORS[@colors.size % COLORS.size]
-          "##{@colors[model_name].map { |c| "%02x" % c }.join}"
+          @colors[model_name] ||= model_name.to_color # COLORS[@colors.size % COLORS.size]
+          # "##{@colors[model_name].map { |c| "%02x" % c }.join}"
         end
 
         def graph_node_params model, reuse_nodes, levels
-          reuse_nodes ?
-            [model.name, "grey#{30 + (@max_levels - levels) * 70 / @max_levels}"] :
-            ["#{model.name}:#{model.__id__}", yield_color(model.name)]
+          # reuse_nodes ?
+          #    [model.name, "grey#{30 + (@levels - levels) * 70 / @levels}"] :
+          #    ["#{model.name}:#{model.__id__}", yield_color(model.name)]
+          [reuse_nodes ? model.name : "#{model.name}:#{model.__id__}", yield_color(model.name)]
         end
 
         def level_to_graph g, root, children, nodes, edges, levels, reuse_nodes
@@ -73,6 +89,14 @@ module Kantox
             edges << [root, subroot, k]
             level_to_graph g, subroot, v[:children], nodes, edges, levels - 1, reuse_nodes
           end
+        end
+
+        def level_to_plant_uml model
+          model[:children].inject([]) do |memo, (k, v)|
+            # FIXME different types of connectors
+            memo << "#{model[:model].name} #{'o' if v[:type] == :belongs_to}-- #{v[:model].name} : #{k} >" \
+                 << level_to_plant_uml(v)
+          end.join("\n")
         end
       end
     end

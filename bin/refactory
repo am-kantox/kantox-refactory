@@ -11,8 +11,14 @@ require 'kantox/refactory'
 
 require File.expand_path('config/environment',  Dir.pwd)
 
-bidside = Kantox::Refactory::Model::Telescope.new(BidSide)
+[BidSide, Bid, Hedge, Profile].each do |entity|
+  e = Kantox::Refactory::Model::Telescope.new(entity)
+  e.to_plant_uml
 
-
-1.upto(10) { |i| bidside.to_graph true, i }
-1.upto(10) { |i| bidside.to_graph false, i }
+  [true, false].each do |tf|
+    [2,4,10].each do |i|
+      Kantox::Refactory::Model::Telescope.new(entity, i).to_graph tf
+      Kantox::Refactory::Model::Telescope.new(entity, i, false).to_graph tf
+    end
+  end
+end
